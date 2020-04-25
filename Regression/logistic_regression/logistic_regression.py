@@ -2,7 +2,11 @@ import numpy as np
 
 
 class LogisticRegression:
-    def __init__(self, ld=0, stepsize=3, iters=1e4, tol=1):
+    """
+    Logistic regression with ridge regularization
+    """
+
+    def __init__(self, ld=0, stepsize=3, iters=1e4, tol=1E-5):
         """
         Constructor for LogisticRegression class
         :param ld: (float) regularization weighting
@@ -57,8 +61,8 @@ class LogisticRegression:
         type1 = sum(-y * np.log(expit(X @ B)))
         type2 = sum((1 - y) * np.log(1 - expit(X @ B)))
         L2 = sum(self.ld * B ** 2)
-        cost = np.nansum([type1.T, -type2.T]) + L2
-        return cost
+        cost = np.nansum([type1, -type2]) + L2
+        return cost/len(y)
 
     def accuracy_breakdown(self, X, y, threshold=0.5):
         """
@@ -70,36 +74,52 @@ class LogisticRegression:
         result, count = np.unique(y - self.predict(X, threshold=threshold) * 0.1, return_counts=True)
         return dict(zip(['False Positive', 'True Negative', 'True Positive', 'False Negative'], count))
 
-    def fit(self, X, y, verbose=True):
+    def fit(self, X, y, verbose=True, valid_X=None, valid_y=None):
         """
         Perform a GD fit
         :param X: (array) input vectors
         :param y: (vector) targets
         :param B: (vector) LR coefficients:
         :param verbose: (bool) verbosity
+        :returns: (list) Training cost
+        :returns: (list) Validation cost
         """
-        conv = np.zeros(self.iters)
+
+        history = {'training_loss': np.zeros(self.iters), 'training_acc': np.zeros(self.iters)}
+
+        if valid_X is not None:
+            history['validation_loss'] = np.zeros(self.iters)
+            history['validation_acc'] = np.zeros(self.iters)
+
+
         i = 0
         if self.B == None:
             self.B = np.zeros(len(X.T)).T
 
         while True:
             self.B = self.GD_step(X, self.B, y)
-            conv[i] = self.NLL(X, self.B, y)
-            if ((conv[i] - conv[i - 1]) > conv[i] * 1.44):
+            history['training_loss'][i] = self.NLL(X, self.B, y)
+            history['training_acc'][i] = self.accuracy(X, y)
+            if valid_X is not None:
+                history['validation_loss'][i] = self.NLL(valid_X, self.B, valid_y)
+                history['validation_acc'][i] = self.accuracy(valid_X, valid_y)
+
+            if ((history['training_loss'][i] - history['training_loss'][i - 1]) > history['training_loss'][i] * 1.44):
                 print("Diverging!")
-                return conv
-            if (np.abs(conv[i - 1] - conv[i]) < self.tol):
+                return history
+            if (np.abs(history['training_loss'][i - 1] - history['training_loss'][i]) < self.tol):
                 if verbose:
                     print("Converged in %s iterations!" % i)
-                conv = conv[0:i]
-                return conv
+                for metric, value in history.items():
+                    history[metric] = value[0:i]
+                return history
             if i == self.iters - 1:
                 print("Max iters reached! ")
-                conv = conv[0:i]
-                return conv
+                for metric, value in history.items():
+                    history[metric] = value[0:i]
+                return history
             if verbose:
-                print("\rIter: %s, Cost: %.2f" % (i, conv[i]), end=" ")
+                print("\rIter: %s, Cost: %.2f" % (i, history['training_loss'][i]), end=" ")
             i += 1
 
     def cross_validate(self, X, y, folds=5, verbose=True, **kwargs):
